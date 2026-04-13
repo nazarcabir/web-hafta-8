@@ -7,11 +7,9 @@ import (
 
 func TeacherOnly() gin.HandlerFunc {
     return func(c *gin.Context) {
-        role := c.GetString("role")
-        if role != "teacher" {
-            c.JSON(http.StatusForbidden, gin.H{
-                "error": "Bu işlem sadece öğretmenler için",
-            })
+        role, exists := c.Get("role")
+        if !exists || role != "teacher" {
+            c.JSON(http.StatusForbidden, gin.H{"error": "Bu işlem için 'teacher' yetkisi gereklidir"})
             c.Abort()
             return
         }

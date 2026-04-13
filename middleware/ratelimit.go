@@ -15,21 +15,20 @@ var (
 func getLimiter(ip string) *rate.Limiter {
     mu.Lock()
     defer mu.Unlock()
-    if limiter, exists := limiters[ip]; exists {
-        return limiter
+    l, exists := limiters[ip]
+    if !exists {
+        l = rate.NewLimiter(5, 10)
+        limiters[ip] = l
     }
-    limiter := rate.NewLimiter(5, 10) // 5 istek/sn, burst 10
-    limiters[ip] = limiter
-    return limiter
+    return l
 }
 
 func RateLimitMiddleware() gin.HandlerFunc {
     return func(c *gin.Context) {
-        limiter := getLimiter(c.ClientIP())
+        ip := c.ClientIP()
+        limiter := getLimiter(ip)
         if !limiter.Allow() {
-            c.JSON(http.StatusTooManyRequests, gin.H{
-                "error": "Çok fazla istek gönderdiniz, lütfen bekleyin",
-            })
+            c.JSON(http.StatusTooManyRequests, gin.H{"error": "Çok fazla istek gönderildi"})
             c.Abort()
             return
         }

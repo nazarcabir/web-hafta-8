@@ -8,6 +8,5 @@ type Course struct {
     Description string   `json:"description"`
     Category    string   `json:"category"`
     TeacherID   uint     `json:"teacher_id"`
-    Teacher     User     `json:"teacher" gorm:"foreignKey:TeacherID"`
-    Lessons     []Lesson `json:"lessons,omitempty" gorm:"foreignKey:CourseID"`
+    Lessons     []Lesson `json:"lessons,omitempty"`
 }

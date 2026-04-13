@@ -1,7 +1,6 @@
 package handlers
 
 import (
-    "fmt"
     "log"
     "net/http"
     "sync"
@@ -10,98 +9,57 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
-    CheckOrigin: func(r *http.Request) bool { return true },
+    ReadBufferSize:  1024,
+    WriteBufferSize: 1024,
+    CheckOrigin: func(r *http.Request) bool {
+        return true
+    },
 }
 
-type Classroom struct {
-    clients   map[*websocket.Conn]string
-    broadcast chan Message
-    mu        sync.Mutex
+type Client struct {
+    Conn     *websocket.Conn
+    CourseID string
 }
 
-type Message struct {
-    Username string `json:"username"`
-    Text     string `json:"text"`
-    Type     string `json:"type"`
-    CourseID string `json:"course_id"`
-}
+var clients = make(map[*Client]bool)
+var mu sync.Mutex
 
-var classrooms = make(map[string]*Classroom)
-var classroomMu sync.Mutex
-
-func getClassroom(courseID string) *Classroom {
-    classroomMu.Lock()
-    defer classroomMu.Unlock()
-    if room, exists := classrooms[courseID]; exists {
-        return room
-    }
-    room := &Classroom{
-        clients:   make(map[*websocket.Conn]string),
-        broadcast: make(chan Message, 256),
-    }
-    classrooms[courseID] = room
-    go room.run()
-    return room
-}
-
-func (room *Classroom) run() {
-    for msg := range room.broadcast {
-        room.mu.Lock()
-        for conn := range room.clients {
-            if err := conn.WriteJSON(msg); err != nil {
-                conn.Close()
-                delete(room.clients, conn)
-            }
-        }
-        room.mu.Unlock()
-    }
-}
-
+// @Summary Sınıf Sohbetine/Canlı Yayına Katıl
+// @Tags WebSocket
+// @Security BearerAuth
+// @Param courseId path string true "Kurs ID"
+// @Router /ws/classroom/{courseId} [get]
 func ClassroomWS(c *gin.Context) {
     courseID := c.Param("courseId")
     conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
     if err != nil {
-        log.Println("WebSocket upgrade error:", err)
+        log.Println("Upgrade error:", err)
         return
     }
-    room := getClassroom(courseID)
+    defer conn.Close()
 
-    // Kullanıcı adını context'ten al
-    username := "Anonim"
-    if name, exists := c.Get("user_id"); exists {
-        username = fmt.Sprintf("User_%v", name)
-    }
-
-    room.mu.Lock()
-    room.clients[conn] = username
-    room.mu.Unlock()
-
-    // Katılma bildirimi
-    room.broadcast <- Message{
-        Username: username, Text: "sınıfa katıldı",
-        Type: "system", CourseID: courseID,
-    }
+    client := &Client{Conn: conn, CourseID: courseID}
+    mu.Lock()
+    clients[client] = true
+    mu.Unlock()
 
     defer func() {
-        room.mu.Lock()
-        delete(room.clients, conn)
-        room.mu.Unlock()
-        room.broadcast <- Message{
-            Username: username, Text: "ayrıldı",
-            Type: "system", CourseID: courseID,
-        }
-        conn.Close()
+        mu.Lock()
+        delete(clients, client)
+        mu.Unlock()
     }()
 
-    // Mesaj dinleme döngüsü
     for {
-        var msg Message
+        var msg map[string]interface{}
         if err := conn.ReadJSON(&msg); err != nil {
             break
         }
-        msg.Username = username
-        msg.Type = "chat"
-        msg.CourseID = courseID
-        room.broadcast <- msg
+        mu.Lock()
+        for c := range clients {
+            if c.CourseID == courseID {
+                c.Conn.WriteJSON(msg)
+            }
+        }
+        mu.Unlock()
     }
 }

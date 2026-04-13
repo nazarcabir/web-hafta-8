@@ -1,5 +1,5 @@
 # Aşama 1: Derleme
-FROM golang:1.22-alpine AS builder
+FROM golang:alpine AS builder
 
 # build-base for CGO (SQLite), git for go mod
 RUN apk add --no-cache build-base git
@@ -22,7 +22,7 @@ RUN go install github.com/swaggo/swag/cmd/swag@latest
 RUN go mod tidy
 
 # Generate swagger docs
-RUN /go/bin/swag init
+RUN /go/bin/swag init --parseDependency
 
 # Tidy again just in case swag added new dependencies
 RUN go mod tidy
